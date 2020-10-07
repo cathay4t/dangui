@@ -1,107 +1,92 @@
+mod plot;
+
 use hound::WavReader;
-use plotters;
+use plot::show_plot;
 use rustfft::num_complex::Complex;
 use rustfft::FFTplanner;
 use std::env::args;
 
-fn find_spectral_peak(filename: &str) -> Option<f32> {
-    let mut reader = WavReader::open(filename).expect("Failed to open WAV file");
+const CHUNK_SIZE: usize = 1024 * 5;
+
+fn time_based_spectral(filename: &str) {
+    let mut reader =
+        WavReader::open(filename).expect("Failed to open WAV file");
     let num_samples = reader.len() as usize;
     let mut fft_planer = FFTplanner::new(false); // not inverse FFT;
-    let fft = fft_planer.plan_fft(num_samples);
-    let mut signal = reader
+    let fft = fft_planer.plan_fft(CHUNK_SIZE);
+    let signal = reader
         .samples::<i16>()
         .map(|x| Complex::new(x.unwrap() as f32, 0f32))
         .collect::<Vec<_>>();
-    let mut spectrum = signal.clone();
-    fft.process(&mut signal[..], &mut spectrum[..]);
-    let max_peak = spectrum
-        .iter()
-        .take(num_samples / 2)
-        .enumerate()
-        .max_by_key(|&(_, freq)| freq.norm() as u32);
-    if let Some((i, _)) = max_peak {
-        let bin = 44100f32 / num_samples as f32;
-        Some(i as f32 * bin)
-    } else {
-        None
+    let time_signal = (0..signal.len())
+        .map(|i| (i as f32, signal[i].re as f32))
+        .collect::<Vec<_>>();
+    show_plot("signal", &time_signal);
+    let mut time_spectrum = Vec::new();
+    let mut i = 0;
+    for signal_chunk in signal.chunks(CHUNK_SIZE) {
+        i = i + 1;
+        let mut new_signal_chunk = if signal_chunk.len() != CHUNK_SIZE {
+            let mut tmp_vec = vec![Complex::new(0.0f32, 0.0); CHUNK_SIZE];
+            (0..signal_chunk.len()).map(|j| tmp_vec[j] = signal_chunk[j]);
+            tmp_vec
+        } else {
+            signal_chunk.into()
+        };
+        let mut spectrum = new_signal_chunk.clone();
+        fft.process(&mut new_signal_chunk[..], &mut spectrum[..]);
+        let max_peak = spectrum
+            .iter()
+            .take(CHUNK_SIZE / 2)
+            .enumerate()
+            .max_by_key(|&(_, freq)| freq.norm() as u32);
+        if let Some((f, _)) = max_peak {
+            let bin = 44100f32 / CHUNK_SIZE as f32;
+            let freq = f as f32 * bin;
+            match frequency_to_key(freq) {
+                Some(_) => time_spectrum.push((i as f32, freq)),
+                None => continue,
+            }
+            println!("feq {}, key {:?}", freq, frequency_to_key(freq));
+        } else {
+            continue;
+        }
     }
+    show_plot("spectrum", &time_spectrum);
 }
 
-const DRIFT_PERCENT: u32 = 5;
-struct FreqencyMap {
-    key: &'static str,
-    freq: f32,
-}
+const DRIFT_PERCENT: f32 = 0.05;
 
 // Refrence: http://www.contrabass.com/pages/frequency.html
-static FREQENCY_MAPS: [FreqencyMap; 12] = [
-    FreqencyMap {
-        key: "C4",
-        freq: 261.63,
-    },
-    FreqencyMap {
-        key: "C#4",
-        freq: 277.18,
-    },
-    FreqencyMap {
-        key: "D4",
-        freq: 293.66,
-    },
-    FreqencyMap {
-        key: "D#4",
-        freq: 311.13,
-    },
-    FreqencyMap {
-        key: "E4",
-        freq: 329.63,
-    },
-    FreqencyMap {
-        key: "F4",
-        freq: 349.23,
-    },
-    FreqencyMap {
-        key: "F#4",
-        freq: 369.99,
-    },
-    FreqencyMap {
-        key: "G4",
-        freq: 392.00,
-    },
-    FreqencyMap {
-        key: "G#4",
-        freq: 415.30,
-    },
-    FreqencyMap {
-        key: "A4",
-        freq: 440.0,
-    },
-    FreqencyMap {
-        key: "A#4",
-        freq: 466.16,
-    },
-    FreqencyMap {
-        key: "B4",
-        freq: 493.88,
-    },
+static FREQENCY_MAPS: [(&str, f32); 14] = [
+    ("A#3", 233.88),
+    ("B3", 246.94),
+    ("C4", 261.63),
+    ("C#4", 277.18),
+    ("D4", 293.66),
+    ("D#4", 311.13),
+    ("E4", 329.63),
+    ("F4", 349.23),
+    ("F#4", 369.99),
+    ("G4", 392.00),
+    ("G#4", 415.30),
+    ("A4", 440.00),
+    ("A#4", 466.16),
+    ("B4", 493.88),
 ];
 
 fn frequency_to_key(freqency: f32) -> Option<String> {
     for freq_map in &FREQENCY_MAPS {
-        if ((freqency - freq_map.freq).abs() / freq_map.freq) < DRIFT_PERCENT as f32 {
-            return Some(freq_map.key.to_string());
+        if ((freqency - freq_map.1).abs() / freq_map.1) < DRIFT_PERCENT {
+            return Some(freq_map.0.to_string());
         }
     }
     None
 }
 
-//fn to_png(
-
 fn main() {
     let file_path = args().nth(1).expect("Please provide a WAV file");
     println!("{}", &file_path);
 
-    let freq = find_spectral_peak(&file_path).unwrap();
-    println!("spectral_peak {:?}", freq);
-    println!("key {}", frequency_to_key(freq).unwrap());
+    time_based_spectral(&file_path);
 }
