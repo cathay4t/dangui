@@ -7,11 +7,11 @@ use rustfft::FFTplanner;
 use std::env::args;
 
 const CHUNK_SIZE: usize = 1024 * 5;
+const SAMPLE_RATE: f32 = 44100.0;
 
 fn time_based_spectral(filename: &str) {
     let mut reader =
         WavReader::open(filename).expect("Failed to open WAV file");
-    let num_samples = reader.len() as usize;
     let mut fft_planer = FFTplanner::new(false); // not inverse FFT;
     let fft = fft_planer.plan_fft(CHUNK_SIZE);
     let signal = reader
@@ -28,7 +28,9 @@ fn time_based_spectral(filename: &str) {
         i = i + 1;
         let mut new_signal_chunk = if signal_chunk.len() != CHUNK_SIZE {
             let mut tmp_vec = vec![Complex::new(0.0f32, 0.0); CHUNK_SIZE];
-            (0..signal_chunk.len()).map(|j| tmp_vec[j] = signal_chunk[j]);
+            for (j, d) in signal_chunk.iter().enumerate() {
+                tmp_vec[j] = *d;
+            }
             tmp_vec
         } else {
             signal_chunk.into()
@@ -41,7 +43,7 @@ fn time_based_spectral(filename: &str) {
             .enumerate()
             .max_by_key(|&(_, freq)| freq.norm() as u32);
         if let Some((f, _)) = max_peak {
-            let bin = 44100f32 / CHUNK_SIZE as f32;
+            let bin = SAMPLE_RATE / CHUNK_SIZE as f32;
             let freq = f as f32 * bin;
             match frequency_to_key(freq) {
                 Some(_) => time_spectrum.push((i as f32, freq)),
