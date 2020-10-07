@@ -1,0 +1,10 @@
+[package]
+name = "dangui"
+version = "0.1.0"
+authors = ["Gris Ge <cnfourt@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+hound = "3.4.0"
+rustfft = "3"
+plotters = "^0.3.0"
